@@ -1,49 +1,45 @@
 pipeline {
-    agent any
+  agent any
 
-    environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
-        IMAGE_NAME = "gsaivarshini10/pro:local"
+  environment {
+    IMAGE_NAME = "gsavarshini10/pro"
+    TAG = "${env.BUILD_NUMBER}"
+  }
+
+  stages {
+    stage('Checkout Code') {
+      steps {
+        checkout scm
+      }
     }
 
-    stages {
-        stage('Checkout Source') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t ${IMAGE_NAME}:latest .'
-            }
-        }
-
-        stage('Login to Docker Hub') {
-            steps {
-                sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
-            }
-        }
-
-        stage('Push Image to Docker Hub') {
-            steps {
-                sh 'docker push ${IMAGE_NAME}:latest'
-            }
-        }
-
-        stage('Cleanup') {
-            steps {
-                sh 'docker system prune -f'
-            }
-        }
+    stage('Build Docker Image') {
+      steps {
+        sh 'docker build -t $IMAGE_NAME:$TAG .'
+      }
     }
 
-    post {
-        success {
-            echo '✅ Successfully built and pushed Docker image to Docker Hub!'
+    stage('Push to Docker Hub') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
+                                          usernameVariable: 'DOCKER_USER',
+                                          passwordVariable: 'DOCKER_PASS')]) {
+          sh '''
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker push $IMAGE_NAME:$TAG
+            docker tag $IMAGE_NAME:$TAG $IMAGE_NAME:latest
+            docker push $IMAGE_NAME:latest
+          '''
         }
-        failure {
-            echo '❌ Build failed. Check logs for details.'
-        }
+      }
     }
+  }
+
+  post {
+    always {
+      sh 'docker logout || true'
+      cleanWs()
+    }
+  }
 }
+
